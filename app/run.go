@@ -1,10 +1,9 @@
-package main
+package app
 
 import (
 	"bufio"
 	"encoding/json"
 	"fmt"
-	syslog "log"
 	"os"
 	"sync"
 
@@ -14,73 +13,10 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-const appName = "opcode-stats"
+func Run(cliCtx *cli.Context) error {
 
-var (
-	rpcUrl = cli.StringFlag{
-		Name:     "url",
-		Aliases:  []string{"u"},
-		Usage:    "RPC url",
-		Required: true,
-	}
-	startBlock = cli.Uint64Flag{
-		Name:     "start-block",
-		Aliases:  []string{"s"},
-		Usage:    "Start block number",
-		Required: false,
-	}
-	outputFile = cli.PathFlag{
-		Name:     "output",
-		Aliases:  []string{"o"},
-		Usage:    "Output file for data",
-		Required: true,
-	}
-	overwriteFile = cli.BoolFlag{
-		Name:     "overwrite",
-		Aliases:  []string{"w"},
-		Usage:    "Overwrite output if exists",
-		Required: false,
-	}
-	concurrencyFlag = cli.IntFlag{
-		Name:     "concurrency",
-		Aliases:  []string{"c"},
-		Usage:    "Concurrent requests",
-		Required: false,
-	}
-)
-
-func main() {
-	app := cli.NewApp()
-	app.Name = appName
-	app.Commands = []*cli.Command{
-		{
-			Name:    "run",
-			Aliases: []string{},
-			Usage:   fmt.Sprintf("Run the %v", appName),
-			Action:  run,
-			Flags:   []cli.Flag{&rpcUrl, &startBlock, &outputFile, &overwriteFile, &concurrencyFlag},
-		},
-	}
-
-	err := app.Run(os.Args)
-	if err != nil {
-		syslog.Fatal(err)
-		os.Exit(1)
-	}
-}
-
-type Payload struct {
-	Block    uint64         `json:"block"`
-	Tx       int            `json:"tx"`
-	Hash     string         `json:"hash"`
-	Contract string         `json:"contract"`
-	Data     map[string]int `json:"data"`
-}
-
-func run(cliCtx *cli.Context) error {
-
-	output := cliCtx.Path(outputFile.Name)
-	overwrite := cliCtx.Bool(overwriteFile.Name)
+	output := cliCtx.Path(outputFlag.Name)
+	overwrite := cliCtx.Bool(overwriteFlag.Name)
 	concurrency := cliCtx.Int(concurrencyFlag.Name)
 	if concurrency == 0 {
 		concurrency = 1
@@ -93,11 +29,7 @@ func run(cliCtx *cli.Context) error {
 
 	go writeMessages(output, overwrite, messages)
 
-	if err := log.Init("info", "stderr"); err != nil {
-		return err
-	}
-
-	client, err := jsonrpc.NewClient(cliCtx.String(rpcUrl.Name))
+	client, err := jsonrpc.NewClient(cliCtx.String(rpcUrlFlag.Name))
 	if err != nil {
 		return err
 	}
@@ -109,8 +41,8 @@ func run(cliCtx *cli.Context) error {
 	}
 
 	startAt := latest
-	if cliCtx.IsSet(startBlock.Name) {
-		startAt = cliCtx.Uint64(startBlock.Name)
+	if cliCtx.IsSet(startBlockFlag.Name) {
+		startAt = cliCtx.Uint64(startBlockFlag.Name)
 	}
 
 	// Walks backward from start to 0, N at a time

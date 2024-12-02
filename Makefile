@@ -17,7 +17,7 @@ GOOS := $(shell uname -s  | tr '[:upper:]' '[:lower:]')
 GOENVVARS := GOBIN=$(GOBIN) CGO_ENABLED=1 GOOS=$(GOOS) GOARCH=$(ARCH)
 
 GOBINARY := opcode-stats
-GOCMD := $(GOBASE)/cmd
+GOCMD := $(GOBASE)
 
 .PHONY: build
 build: ## Builds the binary locally into ./dist
