@@ -3,7 +3,6 @@ package app
 import (
 	"bufio"
 	"encoding/json"
-	"fmt"
 	"os"
 	"sync"
 
@@ -48,7 +47,7 @@ func Run(cliCtx *cli.Context) error {
 	// Walks backward from start to 0, N at a time
 	for i := startAt; i > 0; i-- {
 		var wg sync.WaitGroup
-		for w := 0; w < 5; w++ {
+		for w := 0; w < concurrency; w++ {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
@@ -62,12 +61,11 @@ func Run(cliCtx *cli.Context) error {
 }
 
 func traceTxs(client *jsonrpc.Client, blockNum uint64, messages chan Payload) {
-
 	block, err := client.Eth().GetBlockByNumber(ethgo.BlockNumber(blockNum), true)
 	if err != nil {
+		log.Error(err)
 		return
 	}
-
 	for i := 0; i < len(block.Transactions); i++ {
 		tx := block.Transactions[i]
 		txHash := tx.Hash
@@ -75,9 +73,10 @@ func traceTxs(client *jsonrpc.Client, blockNum uint64, messages chan Payload) {
 			continue
 		}
 		var trace *jsonrpc.TransactionTrace
-		trace, err = client.Debug().TraceTransaction(txHash) // might have to customize this to use particular analyzer
+		trace, err = client.Debug().TraceTransaction(txHash)
 		if err != nil {
 			log.Error(err)
+			continue
 		}
 		if trace == nil {
 			continue
@@ -112,12 +111,12 @@ func writeMessages(path string, overwrite bool, messages chan Payload) {
 	if overwrite {
 		file, err = os.Create(path)
 		if err != nil {
-			panic(err)
+			log.Fatalf("%v", err)
 		}
 	} else if _, err = os.Stat(path); err == nil {
-		panic(fmt.Sprintf("output file '%s' already exists, choose another", path))
+		log.Fatalf("output file '%s' already exists, choose another", path)
 	} else if file, err = os.Open(path); err != nil {
-		panic(err)
+		log.Fatalf("%v", err)
 	}
 	defer file.Close()
 
@@ -127,6 +126,7 @@ func writeMessages(path string, overwrite bool, messages chan Payload) {
 		var msg []byte
 		msg, err = json.Marshal(payload)
 		if err != nil {
+			log.Errorf("error marshalling data: %v", err)
 			continue
 		}
 		writer.WriteString(string(msg))
