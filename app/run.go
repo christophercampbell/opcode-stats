@@ -4,7 +4,8 @@ import (
 	"bufio"
 	"encoding/json"
 	"os"
-	"sync"
+	"os/signal"
+	"syscall"
 
 	"github.com/christophercampbell/bridge-connector/log"
 	"github.com/umbracle/ethgo"
@@ -44,62 +45,75 @@ func Run(cliCtx *cli.Context) error {
 		startAt = cliCtx.Uint64(startBlockFlag.Name)
 	}
 
-	// Walks backward from start to 0, N at a time
-	for i := startAt; i > 0; i-- {
-		var wg sync.WaitGroup
-		for w := 0; w < concurrency; w++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				traceTxs(client, i, messages)
-			}()
-		}
-		wg.Wait()
+	blocks := make(chan uint64, 1)
+
+	go produceBlockNums(startAt, blocks)
+
+	for i := 0; i < concurrency; i++ {
+		go traceTxs(client, blocks, messages)
 	}
+
+	BlockOnInterrupts()
 
 	return nil
 }
 
-func traceTxs(client *jsonrpc.Client, blockNum uint64, messages chan Payload) {
-	block, err := client.Eth().GetBlockByNumber(ethgo.BlockNumber(blockNum), true)
-	if err != nil {
-		log.Error(err)
-		return
+func produceBlockNums(start uint64, blockNums chan uint64) {
+	for start > 0 {
+		blockNums <- start
+		start--
 	}
-	for i := 0; i < len(block.Transactions); i++ {
-		tx := block.Transactions[i]
-		txHash := tx.Hash
-		if tx.To == nil {
-			continue
+}
+
+func traceTxs(client *jsonrpc.Client, blockNums chan uint64, messages chan Payload) {
+	for {
+		blockNum := <-blockNums
+		if blockNum <= 0 {
+			return
 		}
-		var trace *jsonrpc.TransactionTrace
-		trace, err = client.Debug().TraceTransaction(txHash)
+
+		log.Info("block: ", blockNum)
+
+		block, err := client.Eth().GetBlockByNumber(ethgo.BlockNumber(blockNum), true)
 		if err != nil {
 			log.Error(err)
-			continue
+			return
 		}
-		if trace == nil {
-			continue
-		}
-		ops := make(map[string]int)
-		for k := 0; k < len(trace.StructLogs); k++ {
-			log := trace.StructLogs[k]
-			if count, ok := ops[log.Op]; ok {
-				ops[log.Op] = count + 1
-			} else {
-				ops[log.Op] = 1
+		for i := 0; i < len(block.Transactions); i++ {
+			tx := block.Transactions[i]
+			txHash := tx.Hash
+			if tx.To == nil {
+				continue
 			}
-		}
+			var trace *jsonrpc.TransactionTrace
+			trace, err = client.Debug().TraceTransaction(txHash)
+			if err != nil {
+				log.Error(err)
+				continue
+			}
+			if trace == nil {
+				continue
+			}
+			ops := make(map[string]int)
+			for k := 0; k < len(trace.StructLogs); k++ {
+				log := trace.StructLogs[k]
+				if count, ok := ops[log.Op]; ok {
+					ops[log.Op] = count + 1
+				} else {
+					ops[log.Op] = 1
+				}
+			}
 
-		payload := Payload{
-			Block:    blockNum,
-			Tx:       i,
-			Hash:     tx.Hash.String(),
-			Contract: tx.To.String(),
-			Data:     ops,
-		}
+			payload := Payload{
+				Block:    blockNum,
+				Tx:       i,
+				Hash:     tx.Hash.String(),
+				Contract: tx.To.String(),
+				Data:     ops,
+			}
 
-		messages <- payload
+			messages <- payload
+		}
 	}
 }
 
@@ -133,4 +147,23 @@ func writeMessages(path string, overwrite bool, messages chan Payload) {
 		writer.WriteString("\n")
 		_ = writer.Flush()
 	}
+}
+
+// DefaultInterruptSignals is a set of default interrupt signals.
+var DefaultInterruptSignals = []os.Signal{
+	os.Interrupt,
+	os.Kill,
+	syscall.SIGTERM,
+	syscall.SIGQUIT,
+}
+
+// BlockOnInterrupts blocks until a SIGTERM is received.
+// Passing in signals will override the default signals.
+func BlockOnInterrupts(signals ...os.Signal) {
+	if len(signals) == 0 {
+		signals = DefaultInterruptSignals
+	}
+	interruptChannel := make(chan os.Signal, 1)
+	signal.Notify(interruptChannel, signals...)
+	<-interruptChannel
 }
