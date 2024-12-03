@@ -47,7 +47,12 @@ func Run(cliCtx *cli.Context) error {
 
 	blocks := make(chan uint64, 1)
 
-	go produceBlockNums(startAt, blocks)
+	go func(start uint64, blockNums chan uint64) {
+		for start > 0 {
+			blockNums <- start
+			start--
+		}
+	}(startAt, blocks)
 
 	for i := 0; i < concurrency; i++ {
 		go traceTxs(client, blocks, messages)
@@ -56,13 +61,6 @@ func Run(cliCtx *cli.Context) error {
 	BlockOnInterrupts()
 
 	return nil
-}
-
-func produceBlockNums(start uint64, blockNums chan uint64) {
-	for start > 0 {
-		blockNums <- start
-		start--
-	}
 }
 
 func traceTxs(client *jsonrpc.Client, blockNums chan uint64, messages chan Payload) {
