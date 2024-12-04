@@ -1,8 +1,8 @@
 package app
 
 import (
-	"bufio"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
@@ -20,12 +20,8 @@ func Run(cliCtx *cli.Context) error {
 		concurrency = 1
 	}
 
-	messages := make(chan Payload)
-
 	log.Init("info", "stderr")
 	log.Infof("starting data collector with concurrency = %d", concurrency)
-
-	go writeMessages(messages)
 
 	client, err := jsonrpc.NewClient(cliCtx.String(rpcUrlFlag.Name))
 	if err != nil {
@@ -51,6 +47,9 @@ func Run(cliCtx *cli.Context) error {
 			start--
 		}
 	}(startAt, blocks)
+
+	messages := make(chan Payload)
+	go writeMessages(messages)
 
 	for i := 0; i < concurrency; i++ {
 		go traceTxs(client, blocks, messages)
@@ -114,8 +113,6 @@ func traceTxs(client *jsonrpc.Client, blockNums chan uint64, messages chan Paylo
 }
 
 func writeMessages(messages chan Payload) {
-	writer := bufio.NewWriter(os.Stdout)
-	defer writer.Flush()
 	for {
 		payload := <-messages
 		var msg []byte
@@ -124,9 +121,7 @@ func writeMessages(messages chan Payload) {
 			log.Errorf("error marshalling data: %v", err)
 			continue
 		}
-		writer.WriteString(string(msg))
-		writer.WriteString("\n")
-		_ = writer.Flush()
+		fmt.Println(string(msg)) // write data to stdout
 	}
 }
 
