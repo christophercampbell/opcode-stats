@@ -15,8 +15,6 @@ import (
 
 func Run(cliCtx *cli.Context) error {
 
-	output := cliCtx.Path(outputFlag.Name)
-	overwrite := cliCtx.Bool(overwriteFlag.Name)
 	concurrency := cliCtx.Int(concurrencyFlag.Name)
 	if concurrency == 0 {
 		concurrency = 1
@@ -25,9 +23,9 @@ func Run(cliCtx *cli.Context) error {
 	messages := make(chan Payload)
 
 	log.Init("info", "stderr")
-	log.Infof("starting data collector to '%s' with concurrency = %d", output, concurrency)
+	log.Infof("starting data collector with concurrency = %d", concurrency)
 
-	go writeMessages(output, overwrite, messages)
+	go writeMessages(messages)
 
 	client, err := jsonrpc.NewClient(cliCtx.String(rpcUrlFlag.Name))
 	if err != nil {
@@ -115,28 +113,13 @@ func traceTxs(client *jsonrpc.Client, blockNums chan uint64, messages chan Paylo
 	}
 }
 
-func writeMessages(path string, overwrite bool, messages chan Payload) {
-	var (
-		err  error
-		file *os.File
-	)
-	if overwrite {
-		file, err = os.Create(path)
-		if err != nil {
-			log.Fatalf("%v", err)
-		}
-	} else if _, err = os.Stat(path); err == nil {
-		log.Fatalf("output file '%s' already exists, choose another", path)
-	} else if file, err = os.Open(path); err != nil {
-		log.Fatalf("%v", err)
-	}
-	defer file.Close()
-
-	writer := bufio.NewWriter(file)
+func writeMessages(messages chan Payload) {
+	writer := bufio.NewWriter(os.Stdout)
+	defer writer.Flush()
 	for {
 		payload := <-messages
 		var msg []byte
-		msg, err = json.Marshal(payload)
+		msg, err := json.Marshal(payload)
 		if err != nil {
 			log.Errorf("error marshalling data: %v", err)
 			continue

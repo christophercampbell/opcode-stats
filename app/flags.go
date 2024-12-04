@@ -15,18 +15,6 @@ var (
 		Usage:    "Start block number",
 		Required: false,
 	}
-	outputFlag = cli.PathFlag{
-		Name:     "output",
-		Aliases:  []string{"o"},
-		Usage:    "Output file for data",
-		Required: true,
-	}
-	overwriteFlag = cli.BoolFlag{
-		Name:     "overwrite",
-		Aliases:  []string{"w"},
-		Usage:    "Overwrite output if exists",
-		Required: false,
-	}
 	concurrencyFlag = cli.IntFlag{
 		Name:     "concurrency",
 		Aliases:  []string{"c"},
@@ -34,5 +22,5 @@ var (
 		Required: false,
 	}
 
-	RunFlags = []cli.Flag{&rpcUrlFlag, &startBlockFlag, &outputFlag, &overwriteFlag, &concurrencyFlag}
+	RunFlags = []cli.Flag{&rpcUrlFlag, &startBlockFlag, &concurrencyFlag}
 )
